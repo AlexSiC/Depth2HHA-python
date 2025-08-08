@@ -42,13 +42,82 @@ def processDepthImage(z, missingMask, C):
 
     # rotate the pc and N
     NRot = rotatePC(N, R.T)
-
     pcRot = rotatePC(pc, R.T)
-    h = -pcRot[:,:,1]
-    yMin = np.percentile(h, 0)
-    if (yMin > -90):
-        yMin = -130
-    h = h - yMin
+
+    # --- RANSAC-based floor plane estimation (all units are in centimetres) ---
+    def _fit_plane_ransac(points, max_iters=800, thresh_cm=2.0, min_inlier_ratio=0.1, rng=None):
+        if rng is None:
+            rng = np.random.default_rng()
+        n_pts = points.shape[0]
+        if n_pts < 3:
+            return None
+        best_inliers = None
+        best_model = None
+        for _ in range(max_iters):
+            idx = rng.choice(n_pts, size=3, replace=False)
+            p1, p2, p3 = points[idx]
+            v1 = p2 - p1
+            v2 = p3 - p1
+            n = np.cross(v1, v2)
+            norm_n = np.linalg.norm(n)
+            if norm_n < 1e-6:
+                continue
+            n = n / norm_n
+            d = -np.dot(n, p1)
+            # distances
+            dist = np.abs(points @ n + d)
+            inliers = dist <= thresh_cm
+            if best_inliers is None or inliers.sum() > best_inliers.sum():
+                best_inliers = inliers
+                best_model = (n, d)
+        if best_inliers is None or best_inliers.sum() < max(int(min_inlier_ratio * n_pts), 50):
+            return None
+        # Refit using inliers (least squares)
+        P = points[best_inliers]
+        # plane through SVD: minimize ||P*n + d|| with ||n||=1
+        # Augment to solve for [n_x, n_y, n_z, d]
+        A = np.hstack([P, np.ones((P.shape[0], 1))])
+        # Solve in least squares sense using SVD of A[:, :3]
+        # Constrain ||n||=1 by normalizing after solution
+        # Use normal from PCA of points (smallest singular vector of covariance)
+        P_center = P.mean(axis=0)
+        U, S, Vt = np.linalg.svd(P - P_center, full_matrices=False)
+        n_ls = Vt[-1, :]
+        n_ls = n_ls / (np.linalg.norm(n_ls) + 1e-12)
+        d_ls = -np.dot(n_ls, P_center)
+        return (n_ls, d_ls)
+
+    # Build candidate set: valid points in lower ROI
+    H, W = pcRot.shape[:2]
+    roi_start = int((1.0 - 0.35) * H)  # lower 35% of image
+    valid = (~missingMask.astype(bool)) & np.isfinite(pcRot[:, :, 2])
+    valid[:roi_start, :] = False
+    yy, xx = np.where(valid)
+    if yy.size > 0:
+        P = np.stack([pcRot[yy, xx, 0], pcRot[yy, xx, 1], pcRot[yy, xx, 2]], axis=1)
+    else:
+        P = np.empty((0, 3), dtype=np.float64)
+
+    model = _fit_plane_ransac(P, max_iters=800, thresh_cm=2.0, min_inlier_ratio=0.1)
+
+    if model is not None:
+        n_plane, d_plane = model
+        # Orient normal upwards relative to +Y
+        if np.dot(n_plane, np.array([0.0, 1.0, 0.0])) < 0:
+            n_plane = -n_plane
+            d_plane = -d_plane
+        # Height = signed distance to plane (>=0)
+        h = pcRot[:, :, 0] * n_plane[0] + pcRot[:, :, 1] * n_plane[1] + pcRot[:, :, 2] * n_plane[2] + d_plane
+        h = np.maximum(h, 0.0)
+        # Replace gravity direction with plane normal
+        yDir = n_plane.reshape(3, 1)
+    else:
+        # Fallback to legacy heuristic
+        h = -pcRot[:, :, 1]
+        yMin = np.percentile(h, 0)
+        if (yMin > -90):
+            yMin = -130
+        h = h - yMin
 
     return pc, N, yDir, h,  pcRot, NRot
 
