@@ -106,11 +106,16 @@ def processDepthImage(z, missingMask, C):
         if np.dot(n_plane, np.array([0.0, 1.0, 0.0])) < 0:
             n_plane = -n_plane
             d_plane = -d_plane
-        # Height = signed distance to plane (>=0)
+        # Height = signed distance to plane (>=0) in the rotated frame
         h = pcRot[:, :, 0] * n_plane[0] + pcRot[:, :, 1] * n_plane[1] + pcRot[:, :, 2] * n_plane[2] + d_plane
         h = np.maximum(h, 0.0)
-        # Replace gravity direction with plane normal (broadcastable against N: HxWx3)
-        yDir = n_plane.reshape(1, 1, 3)
+        # Gravity-up vector must be expressed in the ORIGINAL camera frame,
+        # because angle is computed with N (not NRot). n_plane is in the rotated
+        # frame, so transform it back by R: yDir_cam = R @ n_plane.
+        yDir_cam = np.dot(R, n_plane.reshape(3, 1)).ravel()
+        yDir_cam = yDir_cam / (np.linalg.norm(yDir_cam) + 1e-12)
+        # Broadcastable shape against N: HxWx3
+        yDir = yDir_cam.reshape(1, 1, 3)
     else:
         # Fallback to legacy heuristic
         h = -pcRot[:, :, 1]

@@ -25,10 +25,12 @@ def getHHA(C, D, RD):
     missingMask = (RD == 0);
     pc, N, yDir, h, pcRot, NRot = processDepthImage(D * 100, missingMask, C);
 
+    # Compute angle between normals (in camera frame) and gravity-up vector
+    # (also expressed in camera frame). yDir is provided by processDepthImage
+    # and aligned to the RANSAC plane normal.
     tmp = np.multiply(N, yDir)
-    acosValue = np.minimum(1,np.maximum(-1,np.sum(tmp, axis=2)))
-    angle = np.array([math.degrees(math.acos(x)) for x in acosValue.flatten()])
-    angle = np.reshape(angle, h.shape)
+    cos_theta = np.minimum(1, np.maximum(-1, np.sum(tmp, axis=2)))
+    angle = np.degrees(np.arccos(cos_theta))
 
     '''
     Must convert nan to 180 as the MATLAB program actually does. 
