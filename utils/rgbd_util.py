@@ -109,8 +109,8 @@ def processDepthImage(z, missingMask, C):
         # Height = signed distance to plane (>=0)
         h = pcRot[:, :, 0] * n_plane[0] + pcRot[:, :, 1] * n_plane[1] + pcRot[:, :, 2] * n_plane[2] + d_plane
         h = np.maximum(h, 0.0)
-        # Replace gravity direction with plane normal
-        yDir = n_plane.reshape(3, 1)
+        # Replace gravity direction with plane normal (broadcastable against N: HxWx3)
+        yDir = n_plane.reshape(1, 1, 3)
     else:
         # Fallback to legacy heuristic
         h = -pcRot[:, :, 1]
