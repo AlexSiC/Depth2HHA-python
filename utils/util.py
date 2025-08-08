@@ -141,12 +141,12 @@ def getRMatrix(yi, yf):
         ax = yi / np.linalg.norm(yi)        # norm(A) = max(svd(A))
         phi = yf
     else:
-        yi = yi / np.linalg.norm(yi)
-        yf = yf / np.linalg.norm(yf)
-        ax = np.cross(yi.T, yf.T).T
+        yi = (yi / np.linalg.norm(yi)).ravel()
+        yf = (yf / np.linalg.norm(yf)).ravel()
+        ax = np.cross(yi, yf).ravel()
         ax = ax / np.linalg.norm(ax)
         # find angle of rotation
-        phi = np.degrees(np.arccos(np.dot(yi.T, yf)))
+        phi = np.degrees(np.arccos(np.dot(yi, yf)))
 
     if (abs(phi) > 0.1):
         phi = phi * (np.pi / 180)
